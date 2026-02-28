@@ -166,39 +166,54 @@ def get_niche_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
     
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
-async def get_ai_response(prompt: str, user_message: str, history: list) -> str:
+async def get_ai_response(prompt: str, user_message: str, history: list, lang: str = "ru") -> str:
     """Get response from Gemini API"""
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
         
         # Build conversation history
-        conversation = [{"role": "user", "parts": [prompt]}]
+        conversation = []
         
-        for msg in history:
+        for msg in history[-10:]:  # Keep last 10 messages for context
             conversation.append(msg)
         
-        conversation.append({"role": "user", "parts": [user_message]})
+        # Add system prompt as first user message
+        full_prompt = f"{prompt}\n\nUser message: {user_message}"
         
         # Generate response
-        chat = model.start_chat(history=conversation[:-1])
-        response = chat.send_message(user_message)
+        if conversation:
+            chat = model.start_chat(history=conversation)
+            response = chat.send_message(full_prompt)
+        else:
+            response = model.generate_content(full_prompt)
         
         return response.text
     except Exception as e:
         logger.error(f"Gemini API error: {e}")
-        return "Извините, произошла ошибка. Попробуйте ещё раз."
+        error_messages = {
+            "ru": "Извините, произошла ошибка. Попробуйте ещё раз.",
+            "en": "Sorry, an error occurred. Please try again.",
+            "ka": "უკაცრავად, მოხდა შეცდომა. სცადეთ ხელახლა.",
+            "tr": "Üzgünüm, bir hata oluştu. Lütfen tekrar deneyin."
+        }
+        return error_messages.get(lang, error_messages["ru"])
 
 @dp.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
     """Handle /start command"""
     user_id = message.from_user.id
     
-    # Reset session
-    user_sessions[user_id] = {"niche": None, "message_count": 0, "history": [], "lang": "ru"}
+    # Detect language from user profile or message
+    lang = "ru"
+    if message.from_user.language_code:
+        lang_code = message.from_user.language_code.lower()
+        if lang_code in ["en", "ka", "tr"]:
+            lang = lang_code
+        elif lang_code.startswith("ru"):
+            lang = "ru"
     
-    # Detect language
-    lang = detect_language(message.text or "")
-    user_sessions[user_id]["lang"] = lang
+    # Reset session
+    user_sessions[user_id] = {"niche": None, "message_count": 0, "history": [], "lang": lang}
     
     welcome_text = WELCOME_MESSAGES.get(lang, WELCOME_MESSAGES["ru"])
     
@@ -234,6 +249,29 @@ async def select_niche(callback: CallbackQuery, state: FSMContext):
     await state.set_state(DemoState.chatting)
     await callback.answer()
 
+@dp.message(F.text.startswith("/reset"))
+async def cmd_reset(message: Message, state: FSMContext):
+    """Reset and go back to niche selection"""
+    user_id = message.from_user.id
+    lang = user_sessions[user_id].get("lang", "ru")
+    
+    # Reset session but keep language
+    user_sessions[user_id] = {"niche": None, "message_count": 0, "history": [], "lang": lang}
+    
+    reset_messages = {
+        "ru": "🔄 Хорошо, давайте начнём заново!\n\n🎯 Выберите нишу:",
+        "en": "🔄 Okay, let's start over!\n\n🎯 Choose your niche:",
+        "ka": "🔄 კარგი, დავიწყოთ თავიდან!\n\n🎯 აირჩიე ნიშა:",
+        "tr": "🔄 Tamam, baştan başlayalım!\n\n🎯 Bir niş seçin:"
+    }
+    
+    await message.answer(
+        reset_messages.get(lang, reset_messages["ru"]),
+        reply_markup=get_niche_keyboard(lang)
+    )
+    
+    await state.set_state(DemoState.choosing_niche)
+
 @dp.message(DemoState.chatting)
 async def handle_message(message: Message, state: FSMContext):
     """Handle user messages in chat mode"""
@@ -252,7 +290,7 @@ async def handle_message(message: Message, state: FSMContext):
     
     # Get AI response
     user_message = message.text
-    response = await get_ai_response(system_prompt, user_message, session["history"])
+    response = await get_ai_response(system_prompt, user_message, session["history"], lang)
     
     # Update history
     session["history"].append({"role": "user", "parts": [user_message]})

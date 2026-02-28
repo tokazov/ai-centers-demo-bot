@@ -1,0 +1,41 @@
+========================================
+RAILWAY DEPLOYMENT - MANUAL STEPS
+========================================
+
+GitHub Repo: https://github.com/tokazov/ai-centers-demo-bot
+
+Project ID: fe9eead2-e606-4dd8-8820-a45687dcb36e
+Environment ID: b2ebc909-77fa-4d46-aa45-25c5206bd82f
+
+STEPS TO DEPLOY:
+
+1. Go to Railway: https://railway.app/project/fe9eead2-e606-4dd8-8820-a45687dcb36e
+
+2. Click "New Service" → "GitHub Repo"
+
+3. Select: tokazov/ai-centers-demo-bot
+
+4. Railway will auto-detect Python and deploy
+
+5. Add Environment Variables:
+   - BOT_TOKEN = 8672975647:AAHpWG5xTxLRv0IKKy6tvl_VlAn_FfL99vM
+   - GEMINI_API_KEY = AIzaSyDRJLp8JGpKid1pTJBRVgeumPdObveAXwY
+
+6. Railway will redeploy automatically
+
+7. Check logs to verify bot started
+
+========================================
+TELEGRAM BOT
+========================================
+
+Username: @TestCargoAsist_bot
+Link: https://t.me/TestCargoAsist_bot
+
+Test:
+1. Send /start
+2. Choose a niche
+3. Chat with AI
+4. After 5 messages → see CTA
+
+========================================

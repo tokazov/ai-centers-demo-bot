@@ -1,0 +1,15 @@
+.git
+.gitignore
+.env
+.env.example
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.log
+README.md
+DEPLOYMENT.md
+REPORT.md
+deploy-instructions.txt
+quick-deploy.sh

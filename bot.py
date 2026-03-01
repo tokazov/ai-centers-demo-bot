@@ -72,16 +72,29 @@ async def on_text(message: Message):
     
     try:
         m = genai.GenerativeModel('gemini-2.5-flash', system_instruction=prompt)
-        chat = m.start_chat(history=s["history"])
-        resp = chat.send_message(message.text)
+        chat = m.start_chat(history=[])
+        
+        # Replay history as context
+        context = ""
+        for i in range(0, len(s["history"]), 2):
+            if i+1 < len(s["history"]):
+                context += f"Клиент: {s['history'][i]}\nАссистент: {s['history'][i+1]}\n\n"
+        
+        user_msg = message.text
+        if context:
+            user_msg = f"[Предыдущий разговор:\n{context}]\n\nКлиент: {message.text}"
+        
+        resp = chat.send_message(user_msg)
         answer = resp.text
         
-        s["history"] = list(chat.history)
+        # Save as simple strings
+        s["history"].append(message.text)
+        s["history"].append(answer)
         if len(s["history"]) > 20:
             s["history"] = s["history"][-16:]
     except Exception as e:
         logger.error(f"Gemini error: {e}")
-        answer = "Извините, произошла ошибка. Попробуйте ещё раз!"
+        answer = f"Ошибка: {type(e).__name__}: {str(e)[:200]}"
     
     s["count"] += 1
     if s["count"] >= 5:

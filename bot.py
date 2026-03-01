@@ -12,7 +12,6 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "8672975647:AAHpWG5xTxLRv0IKKy6tvl_VlAn_FfL99
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyDRJLp8JGpKid1pTJBRVgeumPdObveAXwY")
 
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-2.0-flash')
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -73,25 +72,19 @@ async def on_text(message: Message):
     prompt = PROMPTS.get(s["niche"], PROMPTS["other"])
     
     try:
-        # Build contents for generate_content
-        contents = []
-        # Add system instruction + history
-        for msg in s["history"]:
-            contents.append({"role": msg["role"], "parts": msg["parts"]})
-        contents.append({"role": "user", "parts": [f"[Инструкция: {prompt}]\n\nКлиент: {message.text}"]})
-        
-        resp = model.generate_content(contents)
+        m = genai.GenerativeModel('gemini-2.0-flash', system_instruction=prompt)
+        chat = m.start_chat(history=s["history"])
+        resp = chat.send_message(message.text)
         answer = resp.text
         
-        # Save to history (clean, without system prompt)
-        s["history"].append({"role": "user", "parts": [message.text]})
-        s["history"].append({"role": "model", "parts": [answer]})
-        # Keep history manageable
+        # Update history from chat
+        s["history"] = list(chat.history)
+        # Keep manageable
         if len(s["history"]) > 20:
             s["history"] = s["history"][-16:]
     except Exception as e:
         logger.error(f"Gemini error: {e}")
-        answer = "Извините, произошла ошибка. Попробуйте ещё раз!"
+        answer = f"Извините, произошла ошибка. Попробуйте ещё раз! ({type(e).__name__})"
     
     s["count"] += 1
     if s["count"] >= 5:

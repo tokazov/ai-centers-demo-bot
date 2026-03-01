@@ -272,7 +272,7 @@ async def cmd_reset(message: Message, state: FSMContext):
     
     await state.set_state(DemoState.choosing_niche)
 
-@dp.message(DemoState.chatting)
+@dp.message(F.text & ~F.text.startswith("/"))
 async def handle_message(message: Message, state: FSMContext):
     """Handle user messages in chat mode"""
     user_id = message.from_user.id

@@ -2,21 +2,20 @@ import os, logging, asyncio
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import CommandStart
-import google.generativeai as genai
+from openai import AsyncOpenAI
 from collections import defaultdict
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8672975647:AAHpWG5xTxLRv0IKKy6tvl_VlAn_FfL99vM")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyDRJLp8JGpKid1pTJBRVgeumPdObveAXwY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-genai.configure(api_key=GEMINI_API_KEY)
+client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# Simple dict for sessions - no FSM
 sessions = {}
 
 PROMPTS = {
@@ -71,20 +70,28 @@ async def on_text(message: Message):
     
     prompt = PROMPTS.get(s["niche"], PROMPTS["other"])
     
+    # Build messages for OpenAI
+    messages = [{"role": "system", "content": prompt}]
+    for msg in s["history"][-16:]:
+        messages.append(msg)
+    messages.append({"role": "user", "content": message.text})
+    
     try:
-        m = genai.GenerativeModel('gemini-2.0-flash', system_instruction=prompt)
-        chat = m.start_chat(history=s["history"])
-        resp = chat.send_message(message.text)
-        answer = resp.text
+        resp = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages,
+            max_tokens=500,
+            temperature=0.7
+        )
+        answer = resp.choices[0].message.content
         
-        # Update history from chat
-        s["history"] = list(chat.history)
-        # Keep manageable
+        s["history"].append({"role": "user", "content": message.text})
+        s["history"].append({"role": "assistant", "content": answer})
         if len(s["history"]) > 20:
             s["history"] = s["history"][-16:]
     except Exception as e:
-        logger.error(f"Gemini error: {e}")
-        answer = f"Извините, произошла ошибка. Попробуйте ещё раз! ({type(e).__name__})"
+        logger.error(f"OpenAI error: {e}")
+        answer = f"Извините, произошла ошибка. Попробуйте ещё раз!"
     
     s["count"] += 1
     if s["count"] >= 5:
@@ -93,7 +100,7 @@ async def on_text(message: Message):
     await message.answer(answer)
 
 async def main():
-    logger.info("🚀 AI Centers Demo Bot started!")
+    logger.info("🚀 AI Centers Demo Bot started (OpenAI)!")
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 

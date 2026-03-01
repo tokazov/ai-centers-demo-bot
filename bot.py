@@ -58,6 +58,10 @@ async def on_niche(cb: CallbackQuery):
     await cb.message.edit_text(f"✅ Отлично! Теперь я — AI-ассистент: {name}\n\n💬 Напишите мне как обычный клиент!")
     await cb.answer()
 
+@dp.message(F.voice)
+async def on_voice(message: Message):
+    await message.answer("🎤 Спасибо за голосовое! Пока я работаю с текстом — напишите ваш вопрос и я помогу!")
+
 @dp.message(F.text)
 async def on_text(message: Message):
     uid = message.from_user.id
@@ -67,13 +71,24 @@ async def on_text(message: Message):
         return
     
     prompt = PROMPTS.get(s["niche"], PROMPTS["other"])
-    s["history"].append({"role": "user", "parts": [message.text]})
     
     try:
-        chat = model.start_chat(history=s["history"][:-1])
-        resp = chat.send_message(f"[System: {prompt}]\n\nКлиент: {message.text}")
+        # Build contents for generate_content
+        contents = []
+        # Add system instruction + history
+        for msg in s["history"]:
+            contents.append({"role": msg["role"], "parts": msg["parts"]})
+        contents.append({"role": "user", "parts": [f"[Инструкция: {prompt}]\n\nКлиент: {message.text}"]})
+        
+        resp = model.generate_content(contents)
         answer = resp.text
+        
+        # Save to history (clean, without system prompt)
+        s["history"].append({"role": "user", "parts": [message.text]})
         s["history"].append({"role": "model", "parts": [answer]})
+        # Keep history manageable
+        if len(s["history"]) > 20:
+            s["history"] = s["history"][-16:]
     except Exception as e:
         logger.error(f"Gemini error: {e}")
         answer = "Извините, произошла ошибка. Попробуйте ещё раз!"

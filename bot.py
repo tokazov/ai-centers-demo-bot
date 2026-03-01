@@ -2,16 +2,16 @@ import os, logging, asyncio
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import CommandStart
-from openai import AsyncOpenAI
+import google.generativeai as genai
 from collections import defaultdict
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8672975647:AAHpWG5xTxLRv0IKKy6tvl_VlAn_FfL99vM")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+genai.configure(api_key=GEMINI_API_KEY)
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -70,28 +70,18 @@ async def on_text(message: Message):
     
     prompt = PROMPTS.get(s["niche"], PROMPTS["other"])
     
-    # Build messages for OpenAI
-    messages = [{"role": "system", "content": prompt}]
-    for msg in s["history"][-16:]:
-        messages.append(msg)
-    messages.append({"role": "user", "content": message.text})
-    
     try:
-        resp = await client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=messages,
-            max_tokens=500,
-            temperature=0.7
-        )
-        answer = resp.choices[0].message.content
+        m = genai.GenerativeModel('gemini-2.5-flash', system_instruction=prompt)
+        chat = m.start_chat(history=s["history"])
+        resp = chat.send_message(message.text)
+        answer = resp.text
         
-        s["history"].append({"role": "user", "content": message.text})
-        s["history"].append({"role": "assistant", "content": answer})
+        s["history"] = list(chat.history)
         if len(s["history"]) > 20:
             s["history"] = s["history"][-16:]
     except Exception as e:
-        logger.error(f"OpenAI error: {e}")
-        answer = f"Извините, произошла ошибка. Попробуйте ещё раз!"
+        logger.error(f"Gemini error: {e}")
+        answer = "Извините, произошла ошибка. Попробуйте ещё раз!"
     
     s["count"] += 1
     if s["count"] >= 5:
@@ -100,7 +90,7 @@ async def on_text(message: Message):
     await message.answer(answer)
 
 async def main():
-    logger.info("🚀 AI Centers Demo Bot started (OpenAI)!")
+    logger.info("🚀 AI Centers Demo Bot started (Gemini 2.5 Flash)!")
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 

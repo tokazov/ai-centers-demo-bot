@@ -8,7 +8,7 @@ from collections import defaultdict
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8672975647:AAHpWG5xTxLRv0IKKy6tvl_VlAn_FfL99vM")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 genai.configure(api_key=GEMINI_API_KEY)

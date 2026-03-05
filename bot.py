@@ -29,7 +29,7 @@ PROMPTS = {
 
 NICHE_NAMES = {"restaurant": "🍕 Ресторан", "salon": "💇 Салон красоты", "delivery": "🚚 Доставка", "hotel": "🏨 Отель", "fitness": "🏋️ Фитнес", "other": "💼 Другое"}
 
-CTA = "\n\n━━━━━━━━━━━━━━━\n✨ *Понравилось?*\n\n🚀 Мы можем настроить такого же AI-ассистента для ВАШЕГО бизнеса за 24 часа!\n\n👉 Узнать подробнее: @ai_centers_hub_bot\n💰 От $15/мес"
+CTA = "\n\n━━━━━━━━━━━━━━━\n✨ *Понравилось?*\n\n🚀 Мы можем настроить такого же AI-ассистента для ВАШЕГО бизнеса за 24 часа!\n\n👉 Узнать подробнее: @aicenters_hub_bot\n💰 От $149"
 
 def get_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -65,8 +65,11 @@ async def on_text(message: Message):
     uid = message.from_user.id
     s = sessions.get(uid)
     if not s or not s.get("niche"):
-        await message.answer("Пожалуйста, выберите нишу командой /start", reply_markup=get_keyboard())
-        return
+        # Auto-assign "other" niche for free text, so bot always responds
+        sessions[uid] = {"niche": "other", "count": 0, "history": []}
+        s = sessions[uid]
+        await message.answer("👋 Привет! Я — AI-ассистент для бизнеса. Покажу как это работает!\n\n💬 Сейчас отвечу на ваш вопрос, а если хотите выбрать конкретную нишу — /start")
+        # Continue to process the message below
     
     prompt = PROMPTS.get(s["niche"], PROMPTS["other"])
     

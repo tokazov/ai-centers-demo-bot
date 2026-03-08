@@ -204,9 +204,9 @@ async def on_text(message: Message):
         answer = f"Ошибка: {type(e).__name__}: {str(e)[:200]}"
 
     s["count"] += 1
-    if s["count"] >= 5:
-        await message.answer(answer)
-        await message.answer("✨ <b>Понравилось?</b> Запустите такого же AI-ассистента для своего бизнеса!", reply_markup=CTA_BUTTON, parse_mode="HTML")
+    if s["count"] >= 3:
+        # Add CTA button under the answer itself
+        await message.answer(answer, reply_markup=CTA_BUTTON)
     else:
         await message.answer(answer)
 

@@ -1,12 +1,16 @@
-import os, logging, asyncio
+import os, logging, asyncio, json, re
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import CommandStart
 from google import genai
 from collections import defaultdict
+import aiohttp
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+PLATFORM_API_URL = os.getenv("PLATFORM_API_URL", "https://platform-api-production-f313.up.railway.app")
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "")
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -177,7 +181,18 @@ async def on_text(message: Message):
         s = sessions[uid]
         await message.answer("👋 Привет! Я — AI-ассистент для бизнеса. Покажу как это работает!\n\n💬 Сейчас отвечу на ваш вопрос, а если хотите выбрать конкретную нишу — /start")
 
-    prompt = PROMPTS.get(s["niche"], PROMPTS["other"])
+    base_prompt = PROMPTS.get(s["niche"], PROMPTS["other"])
+
+    # Add ORDER marker instruction
+    order_suffix = """
+
+ВАЖНО — ПЕРЕДАЧА ДАННЫХ В СИСТЕМУ:
+Когда клиент подтвердил заказ/запись/бронь (все данные есть: имя, дата/время, услуга/заказ) — добавь в КОНЕЦ ответа маркер:
+[ORDER: {"name": "Имя", "phone": "телефон", "service": "услуга", "date": "дата время", "notes": "доп.инфо"}]
+Маркер должен быть в последней строке. Клиент его НЕ увидит — система обработает автоматически.
+НЕ добавляй маркер если данные неполные. Сначала уточни всё, потом маркер."""
+
+    prompt = base_prompt + order_suffix
 
     try:
         # Build conversation history for context
@@ -203,12 +218,72 @@ async def on_text(message: Message):
         logger.error(f"Gemini error: {e}")
         answer = f"Ошибка: {type(e).__name__}: {str(e)[:200]}"
 
+    # Parse and handle [ORDER: {...}] marker
+    order_match = re.search(r'\[ORDER:\s*(\{.*?\})\]', answer, re.DOTALL)
+    if order_match:
+        try:
+            order_data = json.loads(order_match.group(1))
+            # Remove marker from visible answer
+            answer = answer[:order_match.start()].rstrip()
+            # Send to Platform API
+            niche = s.get("niche", "other")
+            await send_order_to_platform(uid, niche, order_data)
+            logger.info(f"📋 Order captured from user {uid}: {order_data}")
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to parse ORDER marker: {e}")
+
     s["count"] += 1
     if s["count"] >= 3:
-        # Add CTA button under the answer itself
         await message.answer(answer, reply_markup=CTA_BUTTON)
     else:
         await message.answer(answer)
+
+async def send_order_to_platform(user_id: int, niche: str, order_data: dict):
+    """Send captured order to Platform API as a task for Computer Use."""
+    if not PLATFORM_API_URL or not INTERNAL_API_KEY:
+        logger.warning("PLATFORM_API_URL or INTERNAL_API_KEY not set — skipping task creation")
+        return
+
+    # Map niche to system type
+    system_map = {
+        "restaurant": "google_sheets",
+        "salon": "google_sheets",
+        "delivery": "google_sheets",
+        "hotel": "google_sheets",
+        "fitness": "google_sheets",
+        "other": "google_sheets",
+    }
+
+    payload = {
+        "type": "crm_entry",
+        "system": system_map.get(niche, "google_sheets"),
+        "action": "add_row",
+        "data": {
+            **order_data,
+            "source": f"demo_bot_{niche}",
+            "telegram_user_id": str(user_id),
+        },
+        "bot_id": f"demo_{niche}",
+        "user_id": user_id,
+        "priority": "normal",
+    }
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{PLATFORM_API_URL}/tasks/create",
+                headers={"X-Internal-Key": INTERNAL_API_KEY, "Content-Type": "application/json"},
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    logger.info(f"✅ Task created: #{data.get('task_id')} for user {user_id}")
+                else:
+                    logger.warning(f"Task creation failed: HTTP {resp.status}")
+    except Exception as e:
+        logger.error(f"Error sending order to platform: {e}")
+
 
 async def main():
     logger.info("🚀 AI Centers Demo Bot started (Gemini 2.5 Flash)!")

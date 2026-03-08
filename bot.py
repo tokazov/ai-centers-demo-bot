@@ -2,7 +2,7 @@ import os, logging, asyncio
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import CommandStart
-import google.generativeai as genai
+from google import genai
 from collections import defaultdict
 
 logging.basicConfig(level=logging.INFO)
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-genai.configure(api_key=GEMINI_API_KEY)
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -135,7 +135,9 @@ PROMPTS = {
 
 NICHE_NAMES = {"restaurant": "🍕 Ресторан", "salon": "💇 Салон красоты", "delivery": "🚚 Доставка", "hotel": "🏨 Отель", "fitness": "🏋️ Фитнес", "other": "💼 Другое"}
 
-CTA = "\n\n━━━━━━━━━━━━━━━\n✨ *Понравилось?*\n\n🚀 Мы можем настроить такого же AI-ассистента для ВАШЕГО бизнеса за 24 часа!\n\n👉 Узнать подробнее: @aicenters_hub_bot\n💰 От $149"
+CTA_BUTTON = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="🚀 Хочу такого же бота для бизнеса", url="https://t.me/aicenters_hub_bot")],
+])
 
 def get_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -171,32 +173,28 @@ async def on_text(message: Message):
     uid = message.from_user.id
     s = sessions.get(uid)
     if not s or not s.get("niche"):
-        # Auto-assign "other" niche for free text, so bot always responds
         sessions[uid] = {"niche": "other", "count": 0, "history": []}
         s = sessions[uid]
         await message.answer("👋 Привет! Я — AI-ассистент для бизнеса. Покажу как это работает!\n\n💬 Сейчас отвечу на ваш вопрос, а если хотите выбрать конкретную нишу — /start")
-        # Continue to process the message below
-    
+
     prompt = PROMPTS.get(s["niche"], PROMPTS["other"])
-    
+
     try:
-        m = genai.GenerativeModel('gemini-2.5-flash', system_instruction=prompt)
-        chat = m.start_chat(history=[])
-        
-        # Replay history as context
-        context = ""
+        # Build conversation history for context
+        contents = []
         for i in range(0, len(s["history"]), 2):
-            if i+1 < len(s["history"]):
-                context += f"Клиент: {s['history'][i]}\nАссистент: {s['history'][i+1]}\n\n"
-        
-        user_msg = message.text
-        if context:
-            user_msg = f"[Предыдущий разговор:\n{context}]\n\nКлиент: {message.text}"
-        
-        resp = chat.send_message(user_msg)
-        answer = resp.text
-        
-        # Save as simple strings
+            if i + 1 < len(s["history"]):
+                contents.append({"role": "user", "parts": [{"text": s["history"][i]}]})
+                contents.append({"role": "model", "parts": [{"text": s["history"][i+1]}]})
+        contents.append({"role": "user", "parts": [{"text": message.text}]})
+
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=contents,
+            config={"system_instruction": prompt},
+        )
+        answer = response.text
+
         s["history"].append(message.text)
         s["history"].append(answer)
         if len(s["history"]) > 20:
@@ -204,12 +202,13 @@ async def on_text(message: Message):
     except Exception as e:
         logger.error(f"Gemini error: {e}")
         answer = f"Ошибка: {type(e).__name__}: {str(e)[:200]}"
-    
+
     s["count"] += 1
     if s["count"] >= 5:
-        answer += CTA
-    
-    await message.answer(answer)
+        await message.answer(answer)
+        await message.answer("✨ <b>Понравилось?</b> Запустите такого же AI-ассистента для своего бизнеса!", reply_markup=CTA_BUTTON, parse_mode="HTML")
+    else:
+        await message.answer(answer)
 
 async def main():
     logger.info("🚀 AI Centers Demo Bot started (Gemini 2.5 Flash)!")
